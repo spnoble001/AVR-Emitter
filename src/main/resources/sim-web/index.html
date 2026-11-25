@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transpilador AVR v2: Laboratorio ATmega328P</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="group transport">
+      <button id="btnStart" class="btn primary" title="Compilar y arrancar simavr">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="4.5,3 12.5,8 4.5,13" fill="currentColor" stroke="none"/></svg>
+        <span>Iniciar</span>
+      </button>
+      <button id="btnPause" class="btn" disabled title="Pausar simulación">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="5.5" y1="3.5" x2="5.5" y2="12.5"/><line x1="10.5" y1="3.5" x2="10.5" y2="12.5"/></svg>
+        <span>Pausar</span>
+      </button>
+      <button id="btnStepInstr" class="btn" title="Ejecutar 1 instrucción AVR (ideal con Rayos X CPU)">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v4.5h8.5"/><polyline points="8.5,5.5 11.5,8.5 8.5,11.5"/></svg>
+        <span>+1 instr</span>
+      </button>
+      <button id="btnStep" class="btn" title="Avanzar 10 ms simulados">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="3.5,3.5 9.5,8 3.5,12.5"/><line x1="12" y1="3.5" x2="12" y2="12.5"/></svg>
+        <span>+10 ms</span>
+      </button>
+      <button id="btnReset" class="btn" disabled title="Reiniciar microcontrolador">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a4.8 4.8 0 1 1 1.2 3.5"/><polyline points="3,4 3.5,7.5 7,7"/></svg>
+        <span>Reiniciar</span>
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="segmented" role="tablist" aria-label="Vista del circuito">
+      <button id="modeSchematic" class="seg-btn active" title="Esquemático CAD técnico con ruteo ortogonal">Esquemático</button>
+      <button id="modeBreadboard" class="seg-btn" title="Protoboard física de 63 columnas">Protoboard</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="group">
+      <select id="backendSelect" class="select" aria-label="Motor de firmware" title="Motor de firmware compilado en simavr">
+        <option value="C99">C99 (avr-gcc)</option>
+        <option value="ASM">AVR ASM (avrasm2)</option>
+      </select>
+      <button id="btnCenter" class="btn" title="Centrar y ajustar vista (o doble clic)">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M10 2.5h2.5a1 1 0 0 1 1 1V6M13.5 10v2.5a1 1 0 0 1-1 1H10M6 13.5H3.5a1 1 0 0 1-1-1V10"/></svg>
+        <span>Centrar</span>
+      </button>
+      <span id="zoomBadge" class="meta-mono">100%</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="group status-right">
+      <span id="clockPill" class="meta-mono">ATmega328P · 1 MHz</span>
+      <span id="ssePill" class="sse-status warn">Conectando</span>
+    </div>
+  </header>
+
+  <div class="status-strip">
+    <div class="status-left">
+      <span id="statusText" class="status-main">Conectando con simavr…</span>
+      <span id="customFwBadge" class="custom-fw-badge hidden">
+        <span id="customFwText"></span>
+        <button id="btnClearCustomFw" class="custom-fw-reset" title="Volver al firmware generado por el modelo">Usar generado</button>
+      </span>
+    </div>
+    <span id="hintText" class="hint">Rueda: zoom · Arrastra fondo: mover · Arrastra símbolo: reubicar · Clic derecho en botón: fijar</span>
+  </div>
+
+  <main class="stage-wrap">
+    <canvas id="cadCanvas"></canvas>
+    <div id="hoverTooltip" class="tooltip hidden"></div>
+    <div id="highlightBanner" class="highlight-banner hidden">
+      <span id="highlightBannerText"></span>
+      <button id="btnClearHighlight" class="hl-close" title="Limpiar trazabilidad (Esc)">×</button>
+    </div>
+    <div class="legend" aria-label="Leyenda de niveles eléctricos">
+      <span><i class="dot high"></i>5V alto</span>
+      <span><i class="dot low"></i>0V bajo</span>
+      <span><i class="dot analog"></i>ADC</span>
+      <span><i class="dot idle"></i>Reposo</span>
+    </div>
+  </main>
+
+  <section id="inspectorDock" class="inspector-dock collapsed">
+    <div class="dock-bar">
+      <div class="dock-tabs" role="tablist" aria-label="Instrumentos de depuración">
+        <button id="tabXray" class="dock-tab" role="tab" data-tab="xray">Rayos X CPU</button>
+        <button id="tabFsm" class="dock-tab" role="tab" data-tab="fsm">Grafo FSM</button>
+        <button id="tabTrace" class="dock-tab" role="tab" data-tab="trace">Osciloscopio</button>
+        <button id="tabUart" class="dock-tab hidden" role="tab" data-tab="uart">Terminal UART</button>
+      </div>
+
+      <div class="dock-meta-area">
+        <div id="xrayHeadRight" class="dock-ctx hidden">
+          <span id="xrayCoreSummary" class="cursor-readout">Listo para inspeccionar registros reales</span>
+          <div id="xraySregBar" class="sreg-bar"></div>
+        </div>
+
+        <div id="fsmHeadRight" class="dock-ctx hidden">
+          <span id="fsmSubtitle" class="cursor-readout">Haz clic en cualquier transición para localizar su regla y código</span>
+          <select id="fsmGroupSelect" class="mini-select hidden"></select>
+          <span id="fsmActiveBadge" class="active-phase-text"></span>
+        </div>
+
+        <div id="traceHeadRight" class="dock-ctx hidden">
+          <span id="cursorReadout" class="cursor-readout">Arrastra los cursores A y B para medir Δt y frecuencia</span>
+          <div class="dock-controls">
+            <button id="btnScopeZoomOut" class="mini-btn" title="Reducir zoom temporal">−</button>
+            <span id="scopeZoomLabel" class="mini-chip">1×</span>
+            <button id="btnScopeZoomIn" class="mini-btn" title="Ampliar zoom temporal">+</button>
+            <button id="btnScopeCursors" class="mini-btn active" title="Mostrar u ocultar cursores A y B">Cursores A/B</button>
+            <button id="btnClearTrace" class="mini-btn">Limpiar</button>
+          </div>
+        </div>
+
+        <div id="uartHeadRight" class="dock-ctx hidden">
+          <span id="uartTitle" class="cursor-readout">USART0</span>
+          <div class="uart-send">
+            <input id="uartInput" type="text" placeholder="Texto ASCII para RXD…" autocomplete="off" />
+            <button id="btnUartSend" class="mini-btn primary">Enviar RX</button>
+          </div>
+        </div>
+
+        <button id="btnToggleDock" class="mini-btn dock-collapse-btn" title="Expandir u ocultar panel de instrumentos">Expandir</button>
+      </div>
+    </div>
+
+    <div class="dock-panels">
+      <div id="xrayDock" class="dock-pane hidden">
+        <div id="xrayBody" class="xray-body"></div>
+      </div>
+
+      <div id="fsmDock" class="dock-pane hidden">
+        <div class="fsm-body">
+          <div id="fsmCanvasWrap" class="fsm-svg-wrap"></div>
+          <aside class="fsm-log-col">
+            <div class="xray-sec-head"><span>Historial de transiciones</span></div>
+            <div id="fsmLog" class="fsm-log"></div>
+          </aside>
+        </div>
+      </div>
+
+      <div id="traceDock" class="dock-pane hidden">
+        <canvas id="traceCanvas" height="176"></canvas>
+      </div>
+
+      <div id="uartDock" class="dock-pane hidden">
+        <pre id="uartLog" class="uart-log"></pre>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
